@@ -12,7 +12,7 @@ class DQN:
         self.action_size = action_size
         self.epsilon = 1 # Exploration vs exploitation
         self.epsilon_decay_rate = 0.99
-        self.min_epsilon = 0.15
+        self.min_epsilon = 0.02
         self.gamma = 0.99 # Discount factor
         self.update_rate = 50
         self.model_save_rate = 1
