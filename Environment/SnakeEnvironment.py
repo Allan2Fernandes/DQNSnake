@@ -84,6 +84,7 @@ class SnakeEnvironment:
                     pass
 
                 action = self.dqn.epsilon_greedy(state=state)
+
                 next_state, reward, done = self.env_step(action)
                 episode_reward += reward
                 if reward == 0:
@@ -160,7 +161,7 @@ class SnakeEnvironment:
             else:
                 self.food_position = self.generate_food()
                 pass
-            reward += 5
+            reward += 1
         else:
             reward -= 0.01
             # Remove the last element to maintain the snake length
@@ -168,11 +169,11 @@ class SnakeEnvironment:
             # Check if the snake eats itself or meets edge
             if (head_x, head_y) in self.snake_body:
                 #print("eating tail")
-                reward -= 1
+                reward -= 0.2
                 done = True
             elif head_x == -1 or head_x == self.x_blocks or head_y == -1 or head_y == self.y_blocks:
                 #print("edge detected")
-                reward -= 1
+                reward -= 0.2
                 done = True
                 pass
 
@@ -184,9 +185,12 @@ class SnakeEnvironment:
 
     def generate_snake_starting_positions_directions(self):
         head_x = random.randint(1, self.x_blocks-1)
-        head_y = random.randint(1, self.y_blocks-2)
+        head_y = random.randint(1, self.y_blocks-5)
         self.snake_body.append((head_x, head_y))
         self.snake_body.append((head_x, head_y+1))
+        self.snake_body.append((head_x, head_y + 2))
+        self.snake_body.append((head_x, head_y + 3))
+        self.snake_body.append((head_x, head_y + 4))
         self.current_direction = 0
 
     def generate_food(self):
