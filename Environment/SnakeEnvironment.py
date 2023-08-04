@@ -2,11 +2,12 @@ import random
 import sys
 import pygame
 import numpy as np
-from Environment.DQN import DQN
+from Environment.DQN_conv import DQN_conv as DQN
 import torch
 
 class SnakeEnvironment:
     def __init__(self, x_blocks, y_blocks, block_size, device, num_episodes, max_time_steps, batch_size, render_mode):
+        self.food_eaten = None
         self.num_episodes = num_episodes
         self.max_time_steps = max_time_steps
         self.device = device
@@ -21,7 +22,7 @@ class SnakeEnvironment:
         self.y_blocks = y_blocks
         self.action_size = 3
         self.state_size = self.x_blocks*self.y_blocks + 8
-        self.dqn = DQN(action_size=self.action_size, state_size=self.state_size, device=device)
+        self.dqn = DQN(state_size=self.state_size, action_size=self.action_size, device=device, num_filters=9)
         pygame.init()
         # create the display surface object of specific dimension.
         if render_mode == 'Human':
@@ -29,12 +30,18 @@ class SnakeEnvironment:
 
         self.fps = pygame.time.Clock()
         self.game_loop()
-        pass
 
     def expand_state_dims(self, state):
         state = torch.tensor(state)
         state = torch.unsqueeze(state, dim=0)
         state = state.to(self.device)
+        return state
+
+    def preprocess_state_for_conv_net(self, state):
+        state = torch.unsqueeze(state, dim=0)
+        state = torch.permute(state, (0, 3, 1, 2))
+        state = state.to(self.device)
+        state = torch.tensor(state, dtype=torch.float32)
         return state
 
 
@@ -44,13 +51,13 @@ class SnakeEnvironment:
         self.generate_snake_starting_positions_directions()
         self.is_running = True
         self.food_position = self.generate_food()
-        return self.get_state(False)
+        return self.get_state_conv(False)
 
     def game_loop(self):
         num_steps_completed = 0
         for episode in range(self.num_episodes):
             init_state = self.reset()
-            state = self.expand_state_dims(init_state)
+            state = self.preprocess_state_for_conv_net(init_state)
             done = False
             episode_reward = 0
             time_steps_without_reward = 0
@@ -65,6 +72,7 @@ class SnakeEnvironment:
                 if self.render_mode == "Human":
                     pygame.display.update()
                     self.draw_game_state(window=self.window)
+                    self.window.blit(self.text_surface, (0,0))
                     #fps tick here
                     pass
 
@@ -84,12 +92,12 @@ class SnakeEnvironment:
                     time_steps_without_reward = 0
                     pass
 
-                next_state = self.expand_state_dims(next_state)
+                next_state = self.preprocess_state_for_conv_net(next_state)
                 self.dqn.store_transition(state, action, reward, next_state, done)
                 # Store transition
                 state = next_state
                 if done:
-                    print("Episode", episode, episode_reward, "Snake Length", len(self.snake_body))
+                    print("Episode {}, {:.2f}, Food eaten: {}".format(episode, episode_reward, self.food_eaten))
                     pass
 
                 if len(self.dqn.replay_buffer) > self.batch_size:
@@ -151,6 +159,7 @@ class SnakeEnvironment:
             else:
                 self.food_position = self.generate_food()
                 pass
+            self.food_eaten += 1
             reward += 1
         else:
             reward -= 0.01
@@ -158,7 +167,7 @@ class SnakeEnvironment:
             self.snake_body.pop()
             # Check if the snake eats itself or meets edge
             if (head_x, head_y) in self.snake_body:
-                reward -= 1
+                reward -= 2
                 done = True
             elif head_x == -1 or head_x == self.x_blocks or head_y == -1 or head_y == self.y_blocks:
                 reward -= 1
@@ -167,19 +176,45 @@ class SnakeEnvironment:
 
             self.snake_body.insert(0, new_head)
             pass
-        next_state = self.get_state(done)
+        next_state = self.get_state_conv(done)
         return next_state, reward, done
 
 
     def generate_snake_starting_positions_directions(self):
+        self.food_eaten = 0
         head_x = random.randint(1, self.x_blocks-1)
-        head_y = random.randint(1, self.y_blocks-5)
+        head_y = random.randint(1, self.y_blocks-1)
         self.snake_body.append((head_x, head_y))
-        self.snake_body.append((head_x, head_y+1))
-        self.snake_body.append((head_x, head_y + 2))
-        self.snake_body.append((head_x, head_y + 3))
-        self.snake_body.append((head_x, head_y + 4))
-        self.current_direction = 0
+        # Attach a possible head to the snake
+        # Generate a random number of tail elements
+        for _ in range(random.randint(1, 5)): self.attach_new_head_to_snake()
+        self.current_direction = random.randint(0, 3)
+        pass
+
+    import random
+
+    def attach_new_head_to_snake(self):
+        head_x, head_y = self.snake_body[0]
+        # Possible positions are (x,y-1),(x+1,y), (x, y+1), (x-1, y)
+        possible_positions = [(head_x, head_y - 1), (head_x + 1, head_y), (head_x, head_y + 1), (head_x - 1, head_y)]
+
+        while True:
+            if not possible_positions:
+
+                # If the list is empty, no possible position found, break the loop
+                break
+
+            new_snake_position = possible_positions[random.randint(0, len(possible_positions) - 1)]
+            new_head_x, new_head_y = new_snake_position
+
+            if new_head_x <= -1 or new_head_x >= self.x_blocks or new_head_y <= -1 or new_head_y >= self.y_blocks or new_snake_position in self.snake_body:
+                # Remove the conflicting position from possible_positions
+                possible_positions.remove(new_snake_position)
+            else:
+                # A valid position found, break the loop
+                self.snake_body.insert(0, new_snake_position)
+                break
+
 
     def generate_food(self):
         all_possible_coordinates = set(
@@ -203,7 +238,7 @@ class SnakeEnvironment:
             game_state = np.pad(game_state, (0, 8), 'constant')
             return game_state
         for x,y in self.snake_body:
-            game_state[y][x] = -1
+            game_state[y][x] = -1 # all the tail elements
             pass
 
         game_state[self.snake_body[0][1]][self.snake_body[0][0]] = 1
@@ -224,8 +259,40 @@ class SnakeEnvironment:
         return game_state
 
     def get_state_conv(self, done):
+        game_state = np.zeros((self.x_blocks, self.y_blocks))
+        if done:
+            game_state = np.expand_dims(game_state, axis=-1)
+            padded_filters = np.zeros((self.x_blocks, self.y_blocks, 4))
+            game_state = torch.tensor(game_state)
+            padded_filters = torch.tensor(padded_filters)
+            game_state = torch.cat((game_state, padded_filters), dim=-1)
+            return game_state
 
-        pass
+        for x,y in self.snake_body:
+            game_state[x][y] = -1
+            pass
+        game_state[self.snake_body[0][0]][self.snake_body[0][1]] = 1
+
+        # Apply the direction filters
+        direction_one_hot = torch.nn.functional.one_hot(torch.tensor(self.current_direction), 4)
+        # Reshape the initial tensor to have dimensions (1, 1, 4)
+        reshaped_tensor = direction_one_hot.unsqueeze(0).unsqueeze(1)
+        reshaped_tensor = reshaped_tensor.repeat(self.x_blocks, self.y_blocks, 1)
+        game_state = np.expand_dims(game_state, axis=-1)
+        game_state = torch.tensor(game_state)
+        game_state = torch.cat((game_state, reshaped_tensor), dim=-1)
+
+        # Apply distance to food filters
+        x1 = 1 if ((self.snake_body[0][0] - self.food_position[0]) < 0) else 0
+        x2 = 1 if ((self.snake_body[0][0] - self.food_position[0]) > 0) else 0
+        y1 = 1 if ((self.snake_body[0][1] - self.food_position[1]) < 0) else 0
+        y2 = 1 if ((self.snake_body[0][1] - self.food_position[1]) > 0) else 0
+        relative_distance_vector = torch.tensor([x1, x2, y1, y2])
+        reshaped_tensor2 = relative_distance_vector.unsqueeze(0).unsqueeze(1)
+        reshaped_tensor2 = reshaped_tensor2.repeat(self.x_blocks, self.y_blocks, 1)
+        game_state = torch.cat((game_state, reshaped_tensor2), dim=-1)
+
+        return game_state
 
 
 
@@ -235,12 +302,20 @@ class SnakeEnvironment:
         # Draw the snake
         for index, (x, y) in enumerate(self.snake_body):
             if index == 0:
-                pygame.draw.rect(window, (255, 0, 0), [x * self.block_size, y * self.block_size, self.block_size, self.block_size], 0)
+                pygame.draw.rect(window, (255, 0, 0), [x * self.block_size, y * self.block_size, self.block_size*0.8, self.block_size*0.8], 0)
             else:
-                pygame.draw.rect(window, (0, 0, 255), [x * self.block_size, y * self.block_size, self.block_size, self.block_size], 0)
+                pygame.draw.rect(window, (0, 0, 255), [x * self.block_size, y * self.block_size, self.block_size*0.8, self.block_size*0.8], 0)
 
         # Draw the food
-        pygame.draw.rect(window, (0, 255, 0), [self.food_position[0] * self.block_size, self.food_position[1] * self.block_size, self.block_size, self.block_size], 0)
+        pygame.draw.rect(window, (0, 255, 0), [self.food_position[0] * self.block_size, self.food_position[1] * self.block_size, self.block_size*0.8, self.block_size*0.8], 0)
+
+        # Display the score
+        font = pygame.font.Font(None, 36)
+        text = "Score: " + str(self.food_eaten)
+        text_color = (255, 0, 0)
+        self.text_surface = font.render(text, True, text_color)
+
+
         pass
 
     def sample_action(self):
