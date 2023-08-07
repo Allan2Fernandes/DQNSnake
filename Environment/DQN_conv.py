@@ -6,14 +6,17 @@ import Environment.Q_network_conv as Q_Network
 
 
 class DQN_conv:
-    def __init__(self, state_size, action_size, device, num_filters):
+    def __init__(self, state_size, action_size, device, num_features, num_channels, with_hidden_layer, num_filters):
         self.device = device
         self.state_size = state_size
         self.action_size = action_size
+        self.num_features = num_features
+        self.num_channels = num_channels
         self.num_filters = num_filters
+        self.with_hidden_layer = with_hidden_layer
         self.epsilon = 1 # Exploration vs exploitation
         self.epsilon_decay_rate = 0.99
-        self.min_epsilon = 0
+        self.min_epsilon = 0.02
         self.gamma = 0.99 # Discount factor
         self.update_rate = 50
         self.model_save_rate = 1
@@ -22,11 +25,11 @@ class DQN_conv:
         self.target_network = self.build_network().to(device)
 
         self.target_network.load_state_dict(self.main_network.state_dict())
-        self.optimizer = torch.optim.Adam(self.main_network.parameters(), lr=0.0002)
+        self.optimizer = torch.optim.Adam(self.main_network.parameters(), lr=0.0001)
         self.loss_function = torch.nn.MSELoss()
 
     def build_network(self):
-        model = Q_Network.Q_Network(self.device, self.action_size, num_filters=self.num_filters)
+        model = Q_Network.Q_Network(self.device, self.action_size, num_channels=self.num_channels, num_features=self.num_features, with_hidden_layer=self.with_hidden_layer, num_filters=self.num_filters)
         return model
 
     def store_transition(self, state, action, reward, next_state, done):

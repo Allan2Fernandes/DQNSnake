@@ -4,9 +4,10 @@ import pygame
 import numpy as np
 from Environment.DQN_conv import DQN_conv as DQN
 import torch
+from collections import deque
 
 class SnakeEnvironment:
-    def __init__(self, x_blocks, y_blocks, block_size, device, num_episodes, max_time_steps, batch_size, render_mode):
+    def __init__(self, x_blocks, y_blocks, block_size, device, num_episodes, max_time_steps, batch_size, num_features, render_mode, with_hidden_layer, num_filters):
         self.food_eaten = None
         self.num_episodes = num_episodes
         self.max_time_steps = max_time_steps
@@ -22,7 +23,7 @@ class SnakeEnvironment:
         self.y_blocks = y_blocks
         self.action_size = 3
         self.state_size = self.x_blocks*self.y_blocks + 8
-        self.dqn = DQN(state_size=self.state_size, action_size=self.action_size, device=device, num_filters=9)
+        self.dqn = DQN(state_size=self.state_size, action_size=self.action_size, device=device, num_features=num_features, num_channels=9, with_hidden_layer=with_hidden_layer, num_filters=num_filters)
         pygame.init()
         # create the display surface object of specific dimension.
         if render_mode == 'Human':
@@ -55,6 +56,7 @@ class SnakeEnvironment:
 
     def game_loop(self):
         num_steps_completed = 0
+        running_scores = deque(maxlen=100)
         for episode in range(self.num_episodes):
             init_state = self.reset()
             state = self.preprocess_state_for_conv_net(init_state)
@@ -97,7 +99,7 @@ class SnakeEnvironment:
                 # Store transition
                 state = next_state
                 if done:
-                    print("Episode {}, {:.2f}, Food eaten: {}".format(episode, episode_reward, self.food_eaten))
+                    print("Episode {}, {:.2f}, Food eaten: {}, 100 game running average = {}".format(episode, episode_reward, self.food_eaten, np.average(running_scores)))
                     pass
 
                 if len(self.dqn.replay_buffer) > self.batch_size:
@@ -108,7 +110,7 @@ class SnakeEnvironment:
                     done = True
                 pass
             self.dqn.decay_epsilon()
-
+            running_scores.append(episode_reward)
             pass
         pass
 
@@ -162,12 +164,12 @@ class SnakeEnvironment:
             self.food_eaten += 1
             reward += 1
         else:
-            reward -= 0.01
+            #reward -= 0.001
             # Remove the last element to maintain the snake length
             self.snake_body.pop()
             # Check if the snake eats itself or meets edge
             if (head_x, head_y) in self.snake_body:
-                reward -= 2
+                reward -= 1
                 done = True
             elif head_x == -1 or head_x == self.x_blocks or head_y == -1 or head_y == self.y_blocks:
                 reward -= 1
@@ -187,7 +189,7 @@ class SnakeEnvironment:
         self.snake_body.append((head_x, head_y))
         # Attach a possible head to the snake
         # Generate a random number of tail elements
-        for _ in range(random.randint(1, 5)): self.attach_new_head_to_snake()
+        for _ in range(random.randint(0, 0)): self.attach_new_head_to_snake()
         self.current_direction = random.randint(0, 3)
         pass
 
