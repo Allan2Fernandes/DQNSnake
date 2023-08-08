@@ -7,7 +7,7 @@ import torch
 from collections import deque
 
 class SnakeEnvironment:
-    def __init__(self, x_blocks, y_blocks, block_size, device, num_episodes, max_time_steps, batch_size, num_features, render_mode, with_hidden_layer, num_filters):
+    def __init__(self, x_blocks, y_blocks, block_size, device, num_episodes, max_time_steps, batch_size, num_features, render_mode, with_hidden_layer, num_filters, model_directory):
         self.food_eaten = None
         self.num_episodes = num_episodes
         self.max_time_steps = max_time_steps
@@ -23,7 +23,15 @@ class SnakeEnvironment:
         self.y_blocks = y_blocks
         self.action_size = 3
         self.state_size = self.x_blocks*self.y_blocks + 8
-        self.dqn = DQN(state_size=self.state_size, action_size=self.action_size, device=device, num_features=num_features, num_channels=9, with_hidden_layer=with_hidden_layer, num_filters=num_filters)
+        self.dqn = DQN(state_size=self.state_size,
+                       action_size=self.action_size,
+                       device=device,
+                       num_features=num_features,
+                       num_channels=13,
+                       with_hidden_layer=with_hidden_layer,
+                       num_filters=num_filters,
+                       model_directory=model_directory
+                       )
         pygame.init()
         # create the display surface object of specific dimension.
         if render_mode == 'Human':
@@ -75,7 +83,8 @@ class SnakeEnvironment:
                     pygame.display.update()
                     self.draw_game_state(window=self.window)
                     self.window.blit(self.text_surface, (0,0))
-                    #fps tick here
+                    # fps tick here
+                    #self.fps.tick(2)
                     pass
 
                 for event in pygame.event.get():
@@ -100,6 +109,8 @@ class SnakeEnvironment:
                 state = next_state
                 if done:
                     print("Episode {}, {:.2f}, Food eaten: {}, 100 game running average = {}".format(episode, episode_reward, self.food_eaten, np.average(running_scores)))
+                    if self.food_eaten > 35:
+                        self.dqn.save_entire_model(episode=episode)
                     pass
 
                 if len(self.dqn.replay_buffer) > self.batch_size:
@@ -248,16 +259,17 @@ class SnakeEnvironment:
         game_state = game_state.flatten()
         game_state = np.pad(game_state, (0, 8), 'constant')
         # Relative food position
-        game_state[-7] = (self.snake_body[0][0] - self.food_position[0]) < 0
-        game_state[-6] = (self.snake_body[0][0] - self.food_position[0]) > 0
-        game_state[-5] = (self.snake_body[0][1] - self.food_position[1]) < 0
-        game_state[-4] = (self.snake_body[0][1] - self.food_position[1]) > 0
+        game_state[-7] = (self.snake_body[0][0] - self.food_position[0]) < 0 # Head is to the left of food
+        game_state[-6] = (self.snake_body[0][0] - self.food_position[0]) > 0 # Head is to the right of food
+        game_state[-5] = (self.snake_body[0][1] - self.food_position[1]) < 0 # Head is below food
+        game_state[-4] = (self.snake_body[0][1] - self.food_position[1]) > 0 # Head is above food
         # Direction
         direction_one_hot = torch.nn.functional.one_hot(torch.tensor(self.current_direction), 4)
-        game_state[-4] = direction_one_hot[0].item()
-        game_state[-3]= direction_one_hot[1].item()
-        game_state[-2]= direction_one_hot[2].item()
-        game_state[-1]= direction_one_hot[3].item()
+        game_state[-4] = direction_one_hot[0].item() # North
+        game_state[-3] = direction_one_hot[1].item() # East
+        game_state[-2] = direction_one_hot[2].item() # South
+        game_state[-1] = direction_one_hot[3].item() # West
+
         return game_state
 
     def get_state_conv(self, done):
@@ -275,7 +287,7 @@ class SnakeEnvironment:
             pass
         game_state[self.snake_body[0][0]][self.snake_body[0][1]] = 1
 
-        # Apply the direction filters
+        # Apply the direction filters ------------
         direction_one_hot = torch.nn.functional.one_hot(torch.tensor(self.current_direction), 4)
         # Reshape the initial tensor to have dimensions (1, 1, 4)
         reshaped_tensor = direction_one_hot.unsqueeze(0).unsqueeze(1)
@@ -284,7 +296,7 @@ class SnakeEnvironment:
         game_state = torch.tensor(game_state)
         game_state = torch.cat((game_state, reshaped_tensor), dim=-1)
 
-        # Apply distance to food filters
+        # Apply distance to food filters ---------
         x1 = 1 if ((self.snake_body[0][0] - self.food_position[0]) < 0) else 0
         x2 = 1 if ((self.snake_body[0][0] - self.food_position[0]) > 0) else 0
         y1 = 1 if ((self.snake_body[0][1] - self.food_position[1]) < 0) else 0
@@ -294,6 +306,20 @@ class SnakeEnvironment:
         reshaped_tensor2 = reshaped_tensor2.repeat(self.x_blocks, self.y_blocks, 1)
         game_state = torch.cat((game_state, reshaped_tensor2), dim=-1)
 
+        # Apply the danger filters ---------------
+        head_x, head_y = self.snake_body[0]
+        # Danger above
+        danger_above = 1 if head_y-1 < 0 or (head_x, head_y - 1) in self.snake_body else 0
+        # Danger below
+        danger_below = 1 if head_y+1 >= self.y_blocks or (head_x, head_y + 1) in self.snake_body else 0
+        # Danger East
+        danger_right = 1 if head_x+1 >= self.x_blocks or (head_x + 1, head_y) in self.snake_body else 0
+        # Danger west
+        danger_left = 1 if head_x-1 < 0 or (head_x-1, head_y) in self.snake_body else 0
+        danger_directions_tensor = torch.tensor([danger_above, danger_below, danger_left, danger_right])
+        reshaped_tensor3 = danger_directions_tensor.unsqueeze(0).unsqueeze(1)
+        reshaped_tensor3 = reshaped_tensor3.repeat(self.x_blocks, self.y_blocks, 1)
+        game_state = torch.cat((game_state, reshaped_tensor3), dim=-1)
         return game_state
 
 

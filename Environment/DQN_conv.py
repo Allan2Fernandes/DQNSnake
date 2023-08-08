@@ -6,7 +6,7 @@ import Environment.Q_network_conv as Q_Network
 
 
 class DQN_conv:
-    def __init__(self, state_size, action_size, device, num_features, num_channels, with_hidden_layer, num_filters):
+    def __init__(self, state_size, action_size, device, num_features, num_channels, with_hidden_layer, num_filters, model_directory):
         self.device = device
         self.state_size = state_size
         self.action_size = action_size
@@ -14,6 +14,7 @@ class DQN_conv:
         self.num_channels = num_channels
         self.num_filters = num_filters
         self.with_hidden_layer = with_hidden_layer
+        self.model_directory = model_directory
         self.epsilon = 1 # Exploration vs exploitation
         self.epsilon_decay_rate = 0.99
         self.min_epsilon = 0.02
@@ -29,7 +30,14 @@ class DQN_conv:
         self.loss_function = torch.nn.MSELoss()
 
     def build_network(self):
-        model = Q_Network.Q_Network(self.device, self.action_size, num_channels=self.num_channels, num_features=self.num_features, with_hidden_layer=self.with_hidden_layer, num_filters=self.num_filters)
+        model = Q_Network.Q_Network(self.device,
+                                    self.action_size,
+                                    num_channels=self.num_channels,
+                                    num_features=self.num_features,
+                                    with_hidden_layer=self.with_hidden_layer,
+                                    num_filters=self.num_filters,
+                                    model_directory=self.model_directory
+                                    )
         return model
 
     def store_transition(self, state, action, reward, next_state, done):
@@ -114,7 +122,10 @@ class DQN_conv:
         self.target_network.load_state_dict(self.main_network.state_dict())
         pass
 
-    def save_model(self, path):
+    def save_model_dict(self, path):
         torch.save(self.main_network.state_dict(), path)
+        pass
 
+    def save_entire_model(self, episode):
+        self.main_network.save_model(episode=episode)
 

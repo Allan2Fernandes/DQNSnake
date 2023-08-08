@@ -1,11 +1,14 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 class Q_Network(nn.Module):
-    def __init__(self, device, action_size, num_channels, num_features, with_hidden_layer, num_filters):
+    def __init__(self, device, action_size, num_channels, num_features, with_hidden_layer, num_filters, model_directory):
         super(Q_Network, self).__init__()
         self.with_hidden_layer = with_hidden_layer
+        self.model_directory = model_directory
         self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=num_filters, kernel_size=(3, 3), stride=(1, 1), device=device) #Batch norm the conv layers
         self.conv2 = nn.Conv2d(in_channels=num_filters, out_channels=num_filters*2, kernel_size=(3, 3), stride=(1, 1), device=device)
         self.conv3 = nn.Conv2d(in_channels=num_filters*2, out_channels=num_filters*2, kernel_size=(3, 3), stride=(1,1), device=device)
@@ -66,3 +69,6 @@ class Q_Network(nn.Module):
     def count_parameters(self):
         total_params = sum(p.numel() for p in self.parameters())
         return total_params
+
+    def save_model(self, episode):
+        torch.save(self, os.path.join(self.model_directory, str(episode)))
