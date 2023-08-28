@@ -2,7 +2,7 @@ import random
 import sys
 import pygame
 import numpy as np
-from Environment.DQN_conv import DQN_conv as DQN
+from AgentNetwork.DQN_conv import DQN_conv as DQN
 import torch
 from collections import deque
 
@@ -109,7 +109,7 @@ class SnakeEnvironment:
                 state = next_state
                 if done:
                     print("Episode {}, {:.2f}, Food eaten: {}, 100 game running average = {}".format(episode, episode_reward, self.food_eaten, np.average(running_scores)))
-                    if self.food_eaten > 35:
+                    if self.food_eaten > 27:
                         self.dqn.save_entire_model(episode=episode)
                     pass
 
@@ -203,8 +203,6 @@ class SnakeEnvironment:
         for _ in range(random.randint(0, 0)): self.attach_new_head_to_snake()
         self.current_direction = random.randint(0, 3)
         pass
-
-    import random
 
     def attach_new_head_to_snake(self):
         head_x, head_y = self.snake_body[0]

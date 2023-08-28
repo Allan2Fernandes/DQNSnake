@@ -2,7 +2,7 @@ import sys
 
 import torch
 from Environment.SnakeEnvironment import SnakeEnvironment
-device_name = sys.argv[1]
+device_name = 'cuda' #sys.argv[1]
 if device_name == 'cuda':
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 elif device_name == 'cpu':
@@ -15,10 +15,10 @@ else:
 num_episodes = sys.maxsize
 max_time_steps = 500
 batch_size = 16
-render_mode = 'non'
-num_features = int(sys.argv[2])
-with_hidden_layer = bool(sys.argv[3])
-num_filters = int(sys.argv[4])
+render_mode = 'Human'
+num_features = 512 #int(sys.argv[2])
+with_hidden_layer = False #bool(sys.argv[3])
+num_filters = 64 #int(sys.argv[4])
 model_directory = "C:/Users/Allan/Desktop/Models/SnakeModels"
 env = SnakeEnvironment(10, 10, 50,
                        device=device,
